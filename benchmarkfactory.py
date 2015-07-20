@@ -7,6 +7,7 @@ from benchmark.kvmrbdfio import KvmRbdFio
 from benchmark.librbdfio import LibrbdFio
 from benchmark.nullbench import Nullbench
 from benchmark.cosbench import Cosbench
+from benchmark.mysqlsysbench import MysqlSysBench
 
 def getAll(cluster, iteration):
     objects = []
@@ -49,3 +50,5 @@ def getObject(cluster, benchmark, bconfig):
         return LibrbdFio(cluster, bconfig)
     if benchmark == 'cosbench':
         return Cosbench(cluster, bconfig)
+    if benchmark == 'mysqlsysbench':
+        return MysqlSysBench(cluster, bconfig)
