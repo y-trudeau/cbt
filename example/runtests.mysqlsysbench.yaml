@@ -1,0 +1,16 @@
+cluster:
+  head: "10.2.2.100"
+  clients: ["10.2.2.100"]
+  servers: ["10.2.2.100"]
+  mons: ["10.2.2.100"] 
+  user: yves
+  iterations: 1 
+  osds_per_node: 1
+#  rebuild_every_test: True
+  tmp_dir: "/tmp/cbt"
+benchmarks:
+  mysqlsysbench:
+    warmup-time: 30
+    max-time: 300
+    oltp-table-count: 2
+    use_existing: True
