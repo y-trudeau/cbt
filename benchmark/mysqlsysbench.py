@@ -50,10 +50,10 @@ class MysqlSysBench(Benchmark):
         self.warmup_time = config.get('warmup-time', 600)
         self.report_time = config.get('report-interval', 60)
         
-        self.mycnf_innodb_buffer_pool_size = config.get('mycnf-innodb_buffer_pool_size', 128)
+        self.mycnf_innodb_buffer_pool_size = str(config.get('mycnf-innodb_buffer_pool_size', '128M'))
         self.mycnf_innodb_buffer_pool_instance = config.get('mycnf-innodb_buffer_pool_instance',1)
-        self.mycnf_innodb_log_file_size = config.get('mycnf-innodb_log_file_size', 128)
-        self.mycnf_innodb_log_buffer_size = config.get('mycnf-innodb_log_file_size', 8)
+        self.mycnf_innodb_log_file_size = str(config.get('mycnf-innodb_log_file_size', '128M'))
+        self.mycnf_innodb_log_buffer_size = str(config.get('mycnf-innodb_log_buffer_size', '8M'))
         self.mycnf_innodb_read_io_threads = config.get('mycnf-innodb_read_io_threads', 4)
         self.mycnf_innodb_write_io_threads = config.get('mycnf-innodb_write_io_threads', 4)
         self.mycnf_innodb_purge_threads = config.get('mycnf-innodb_purge_threads', 4)
@@ -63,6 +63,13 @@ class MysqlSysBench(Benchmark):
         self.mycnf_innodb_flush_log_at_trx_commit = config.get('mycnf-innodb_flush_log_at_trx_commit', 1)
         self.mycnf_innodb_flush_neighbors = config.get('mycnf-innodb_flush_neighbors', 1)
 
+        self.use_local_path = str(config.get('use-local-path', ''))
+        if len(self.use_local_path) > 0:
+            self.no_rbd = True
+            self.mysql_datadir = self.use_local_path
+        else:
+            self.no_rbd = False
+            self.mysql_datadir = '%s/mnt/cbt-mysqlsysbench-`hostname -s`' % self.cluster.tmp_dir
         
         self.vol_size = config.get('vol_size', 65536)
         self.vol_order = config.get('vol_order', 22)
@@ -89,15 +96,16 @@ class MysqlSysBench(Benchmark):
     def initialize(self): 
         super(MysqlSysBench, self).initialize()
 
-        print 'Running scrub monitoring.'
-        monitoring.start("%s/scrub_monitoring" % self.run_dir)
-        self.cluster.check_scrub()
-        monitoring.stop()
+        if not self.no_rbd:
+            print 'Running scrub monitoring.'
+            monitoring.start("%s/scrub_monitoring" % self.run_dir)
+            self.cluster.check_scrub()
+            monitoring.stop()
 
-        print 'Pausing for 60s for idle monitoring.'
-        monitoring.start("%s/idle_monitoring" % self.run_dir)
-        time.sleep(60)
-        monitoring.stop()
+            print 'Pausing for 60s for idle monitoring.'
+            monitoring.start("%s/idle_monitoring" % self.run_dir)
+            time.sleep(60)
+            monitoring.stop()
 
         # Create the run directory
         common.make_remote_dir(self.run_dir)
@@ -111,7 +119,7 @@ class MysqlSysBench(Benchmark):
  
         # Initialize the datadir
         print 'Running mysql_install_db.'
-        mysql_install_cmd = 'sudo /usr/bin/mysql_install_db --datadir=%s/mnt/cbt-mysqlsysbench-`hostname -s` --user=mysql --force' % self.cluster.tmp_dir 
+        mysql_install_cmd = 'sudo /usr/bin/mysql_install_db --no-defaults --datadir=%s --user=mysql --force > %s/mysql_install.out 2> %s/mysqlinstall.err ' % (self.mysql_datadir,self.out_dir,self.out_dir)
         common.pdsh(settings.getnodes('clients'), mysql_install_cmd).communicate()
         
         time.sleep(5)
@@ -119,7 +127,7 @@ class MysqlSysBench(Benchmark):
         # Starting MySQL on all nodes
         print 'Starting MySQL'
         mysql_cmd = 'sudo chmod 777 %s; ' % self.out_dir
-        mysql_cmd += 'sudo /usr/sbin/mysqld --user=mysql --datadir=%s/mnt/cbt-mysqlsysbench-`hostname -s` ' % self.cluster.tmp_dir
+        mysql_cmd += 'sudo /usr/sbin/mysqld --no-defaults --user=mysql --datadir=%s ' % self.mysql_datadir
         mysql_cmd += '--pid-file=/tmp/mysqlsysbench.pid '
         mysql_cmd += '--innodb-buffer-pool-size=%s ' % self.mycnf_innodb_buffer_pool_size
         mysql_cmd += '--innodb-log-file-size=%s ' % self.mycnf_innodb_log_file_size
@@ -243,30 +251,40 @@ class MysqlSysBench(Benchmark):
 
     def cleanup(self):
         super(MysqlSysBench, self).cleanup()
+        
         common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench; sudo killall -9 mysqld').communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo umount /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo rbd unmap /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo rbd rm cbt-mysqlsysbench-`hostname -s` --pool %s' %  self.poolname).communicate()
-        self.cluster.rmpool(self.poolname, self.pool_profile)
+        
+        if not self.no_rbd:
+            common.pdsh(settings.getnodes('clients'), 'sudo umount /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo rbd unmap /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo rbd rm cbt-mysqlsysbench-`hostname -s` --pool %s' %  self.poolname).communicate()
+            self.cluster.rmpool(self.poolname, self.pool_profile)
+        
+        common.pdsh(settings.getnodes('clients'), 'sudo rm -rf %s' % self.mysql_datadir).communicate()
         
     def set_client_param(self, param, value):
-        common.pdsh(settings.getnodes('clients'), 'find /sys/block/rbd* -exec sudo sh -c "echo %s > {}/queue/%s" \;' % (value, param)).communicate()
+        if not self.no_rbd:
+            common.pdsh(settings.getnodes('clients'), 'find /sys/block/rbd* -exec sudo sh -c "echo %s > {}/queue/%s" \;' % (value, param)).communicate()
 
     def __str__(self):
         return "%s\n%s\n%s" % (self.run_dir, self.out_dir, super(MysqlSysBench, self).__str__())
 
     def mkimages(self):
-        monitoring.start("%s/pool_monitoring" % self.run_dir)
-        self.cluster.rmpool(self.poolname, self.pool_profile)
-        self.cluster.mkpool(self.poolname, self.pool_profile)
-        common.pdsh(settings.getnodes('clients'), 'sudo rbd create cbt-mysqlsysbench-`hostname -s` --size %s --pool %s' % (self.vol_size, self.poolname)).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo rbd map cbt-mysqlsysbench-`hostname -s` --pool %s' % self.poolname).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo mkfs.xfs /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo mkdir -p -m0755 -- %s/mnt/cbt-mysqlsysbench-`hostname -s`' % self.cluster.tmp_dir).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo mount -t xfs -o rw,noatime,inode64 /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s` %s/mnt/cbt-mysqlsysbench-`hostname -s`' % (self.poolname, self.cluster.tmp_dir)).communicate()
-        common.pdsh(settings.getnodes('clients'), 'sudo chown mysql.mysql %s/mnt/cbt-mysqlsysbench-`hostname -s`' % self.cluster.tmp_dir).communicate()
         
-        monitoring.stop()
+        common.pdsh(settings.getnodes('clients'), 'sudo mkdir -p -m0755 -- %s' % self.mysql_datadir).communicate()
+        
+        if not self.no_rbd:
+            monitoring.start("%s/pool_monitoring" % self.run_dir)
+            self.cluster.rmpool(self.poolname, self.pool_profile)
+            self.cluster.mkpool(self.poolname, self.pool_profile)
+            common.pdsh(settings.getnodes('clients'), 'sudo rbd create cbt-mysqlsysbench-`hostname -s` --size %s --pool %s' % (self.vol_size, self.poolname)).communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo rbd map cbt-mysqlsysbench-`hostname -s` --pool %s' % self.poolname).communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo mkfs.xfs /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo mount -t xfs -o rw,noatime,inode64 /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s` %s' % (self.poolname, self.mysql_datadir)).communicate()
+            monitoring.stop()
+
+        common.pdsh(settings.getnodes('clients'), 'sudo chown mysql.mysql %s' % self.mysql_datadir).communicate()
+        
 
     def recovery_callback(self): 
         common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench; sudo killall -9 mysqld').communicate()

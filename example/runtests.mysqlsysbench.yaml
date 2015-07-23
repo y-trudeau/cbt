@@ -1,9 +1,9 @@
 cluster:
-  head: "10.2.2.100"
-  clients: ["10.2.2.100"]
-  servers: ["10.2.2.100"]
-  mons: ["10.2.2.100"] 
-  user: yves
+  head: "10.0.3.70"
+  clients: ["10.0.3.70"]
+  osds: ["10.0.3.70"]
+  mons: ["10.0.3.70"] 
+  user: ubuntu 
   iterations: 1 
   osds_per_node: 1
 #  rebuild_every_test: True
