@@ -73,6 +73,9 @@ class MysqlSysBench(Benchmark):
         
         self.vol_size = config.get('vol_size', 65536)
         self.vol_order = config.get('vol_order', 22)
+        self.vol_format = config.get('vol_format',2)
+        self.vol_stripe_unit = config.get('vol_stripe_unit',0)
+        self.vol_stripe_count = config.get('vol_stripe_count',0)
         self.random_distribution = config.get('random_distribution', None)
         self.rbdadd_mons = config.get('rbdadd_mons')
         self.rbdadd_options = config.get('rbdadd_options', 'share')
@@ -277,7 +280,15 @@ class MysqlSysBench(Benchmark):
             monitoring.start("%s/pool_monitoring" % self.run_dir)
             self.cluster.rmpool(self.poolname, self.pool_profile)
             self.cluster.mkpool(self.poolname, self.pool_profile)
-            common.pdsh(settings.getnodes('clients'), 'sudo rbd create cbt-mysqlsysbench-`hostname -s` --size %s --pool %s' % (self.vol_size, self.poolname)).communicate()
+            
+            
+            rbd_create_cmd = 'sudo rbd create cbt-mysqlsysbench-`hostname -s` --size %s --pool %s ' % (self.vol_size, self.poolname)
+            rbd_create_cmd += ' --image-format %s ' %  self.vol_format
+            rbd_create_cmd += ' --order %s ' % self.vol_order
+            if self.vol_stripe_unit > 0 and self.vol_stripe_count:
+                rbd_create_cmd += ' --stripe-unit %s --stripe-count %s ' % (self.vol_stripe_unit,self.vol_stripe_count)
+                
+            common.pdsh(settings.getnodes('clients'), rbd_create_cmd).communicate()
             common.pdsh(settings.getnodes('clients'), 'sudo rbd map cbt-mysqlsysbench-`hostname -s` --pool %s' % self.poolname).communicate()
             common.pdsh(settings.getnodes('clients'), 'sudo mkfs.xfs /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
             common.pdsh(settings.getnodes('clients'), 'sudo mount -t xfs -o rw,noatime,inode64 /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s` %s' % (self.poolname, self.mysql_datadir)).communicate()
