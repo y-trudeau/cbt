@@ -179,7 +179,7 @@ class MysqlSysBench(Benchmark):
         pre_cmd = '%s ' % self.cmd_path_full
         pre_cmd += '--test=%s ' % self.prepare_path
         if not self.no_create_db:
-            pre_cmd += '-u root '
+            pre_cmd += '--mysql-user=root '
         else:
             pre_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
         pre_cmd += '--mysql-socket=%s ' % self.mysql_socket
