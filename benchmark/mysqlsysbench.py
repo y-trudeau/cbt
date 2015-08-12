@@ -27,8 +27,8 @@ class MysqlSysBench(Benchmark):
         self.total_procs = self.threads * len(settings.getnodes('clients').split(','))
         
         self.mysql_socket =  str(config.get('mysql-socket', '/tmp/mysqlsysbench.sock'))
-        #self.mysql_user =  str(config.get('mysql-user', 'sbtest'))
-        #self.mysql_pass = str(config.get('mysql-password', 'sbtest'))
+        self.mysql_user =  str(config.get('mysql-user', 'sbtest'))
+        self.mysql_pass = str(config.get('mysql-password', 'sbtest'))
         self.mysql_database = str(config.get('mysql-database', 'sbtest'))
         self.mysql_engine = str(config.get('mysql-engine', 'innodb'))
         
@@ -70,6 +70,15 @@ class MysqlSysBench(Benchmark):
         else:
             self.no_rbd = False
             self.mysql_datadir = '%s/mnt/cbt-mysqlsysbench-`hostname -s`' % self.cluster.tmp_dir
+        
+        self.use_existing_database = str(config.get('use_existing_database', ''))
+        if len(self.use_existing_database) > 0:
+            self.no_rbd = True 
+            self.no_create_db = True
+            self.mysql_database = self.use_existing_database
+        else:
+            self.no_rbd = False
+            self.no_create_db = False
         
         self.vol_size = config.get('vol_size', 65536)
         self.vol_order = config.get('vol_order', 22)
@@ -120,53 +129,59 @@ class MysqlSysBench(Benchmark):
 
         self.mkimages()
  
-        # Initialize the datadir
-        print 'Running mysql_install_db.'
-        mysql_install_cmd = 'sudo /usr/bin/mysql_install_db --no-defaults --datadir=%s --user=mysql --force > %s/mysql_install.out 2> %s/mysqlinstall.err ' % (self.mysql_datadir,self.out_dir,self.out_dir)
-        common.pdsh(settings.getnodes('clients'), mysql_install_cmd).communicate()
+        if not self.no_create_db:
+            # Initialize the datadir
+            print 'Running mysql_install_db.'
+            mysql_install_cmd = 'sudo /usr/bin/mysql_install_db --no-defaults --datadir=%s --user=mysql --force > %s/mysql_install.out 2> %s/mysqlinstall.err ' % (self.mysql_datadir,self.out_dir,self.out_dir)
+            common.pdsh(settings.getnodes('clients'), mysql_install_cmd).communicate()
         
-        time.sleep(5)
+            time.sleep(5)
         
-        # Starting MySQL on all nodes
-        print 'Starting MySQL'
-        mysql_cmd = 'sudo chmod 777 %s; ' % self.out_dir
-        mysql_cmd += 'sudo /usr/sbin/mysqld --no-defaults --user=mysql --datadir=%s ' % self.mysql_datadir
-        mysql_cmd += '--pid-file=/tmp/mysqlsysbench.pid '
-        mysql_cmd += '--innodb-buffer-pool-size=%s ' % self.mycnf_innodb_buffer_pool_size
-        mysql_cmd += '--innodb-log-file-size=%s ' % self.mycnf_innodb_log_file_size
-        mysql_cmd += '--innodb-log-buffer-size=%s ' % self.mycnf_innodb_log_buffer_size
-        mysql_cmd += '--innodb-read-io-threads=%s ' % self.mycnf_innodb_read_io_threads
-        mysql_cmd += '--innodb-write-io-threads=%s ' % self.mycnf_innodb_write_io_threads
-        mysql_cmd += '--innodb-purge-threads=%s ' % self.mycnf_innodb_purge_threads
-        mysql_cmd += '--innodb-doublewrite=%s ' % self.mycnf_innodb_doublewrite
-        mysql_cmd += '--innodb-file-format=%s ' % self.mycnf_innodb_file_format
-        mysql_cmd += '--innodb-flush-method=%s ' % self.mycnf_innodb_flush_method
-        mysql_cmd += '--innodb-flush-log-at-trx-commit=%s ' % self.mycnf_innodb_flush_log_at_trx_commit
-        #mysql_cmd += '--innodb-flush-neighbors=%s ' % self.mycnf_innodb_flush_neighbors  # only for percona server
-        mysql_cmd += '--log-error=%s/mysqld.log ' % self.out_dir
-        mysql_cmd += '--socket=%s ' % self.mysql_socket
-        mysql_cmd += '--skip-networking '
-        mysql_cmd += '--query-cache-size=0 '
-        mysql_cmd += '--innodb-file-per-table ' 
-        mysql_cmd += '--skip-performance-schema '
-        mysql_cmd += ' > %s/mysql_start.out 2> %s/mysql_start.err ' % (self.out_dir,self.out_dir) 
-        mysql_cmd += '&'
-        common.pdsh(settings.getnodes('clients'), mysql_cmd).communicate()
+            # Starting MySQL on all nodes
+            print 'Starting MySQL'
+            mysql_cmd = 'sudo chmod 777 %s; ' % self.out_dir
+            mysql_cmd += 'sudo /usr/sbin/mysqld --no-defaults --user=mysql --datadir=%s ' % self.mysql_datadir
+            mysql_cmd += '--pid-file=/tmp/mysqlsysbench.pid '
+            mysql_cmd += '--innodb-buffer-pool-size=%s ' % self.mycnf_innodb_buffer_pool_size
+            mysql_cmd += '--innodb-log-file-size=%s ' % self.mycnf_innodb_log_file_size
+            mysql_cmd += '--innodb-log-buffer-size=%s ' % self.mycnf_innodb_log_buffer_size
+            mysql_cmd += '--innodb-read-io-threads=%s ' % self.mycnf_innodb_read_io_threads
+            mysql_cmd += '--innodb-write-io-threads=%s ' % self.mycnf_innodb_write_io_threads
+            mysql_cmd += '--innodb-purge-threads=%s ' % self.mycnf_innodb_purge_threads
+            mysql_cmd += '--innodb-doublewrite=%s ' % self.mycnf_innodb_doublewrite
+            mysql_cmd += '--innodb-file-format=%s ' % self.mycnf_innodb_file_format
+            mysql_cmd += '--innodb-flush-method=%s ' % self.mycnf_innodb_flush_method
+            mysql_cmd += '--innodb-flush-log-at-trx-commit=%s ' % self.mycnf_innodb_flush_log_at_trx_commit
+            #mysql_cmd += '--innodb-flush-neighbors=%s ' % self.mycnf_innodb_flush_neighbors  # only for percona server
+            mysql_cmd += '--log-error=%s/mysqld.log ' % self.out_dir
+            mysql_cmd += '--socket=%s ' % self.mysql_socket
+            mysql_cmd += '--skip-networking '
+            mysql_cmd += '--query-cache-size=0 '
+            mysql_cmd += '--innodb-file-per-table ' 
+            mysql_cmd += '--skip-performance-schema '
+            mysql_cmd += ' > %s/mysql_start.out 2> %s/mysql_start.err ' % (self.out_dir,self.out_dir) 
+            mysql_cmd += '&'
+            common.pdsh(settings.getnodes('clients'), mysql_cmd).communicate()
         
-        #give it time to start up
-        print 'Waiting for 60s for mysql to start...'
-        time.sleep(60)
+            #give it time to start up
+            print 'Waiting for 60s for mysql to start...'
+            time.sleep(60)
 
-        # Create the sysbench tables
-        print 'Creating the Sysbench tables...'
-        mysql_cmd = '/usr/bin/mysql -u root -e "create database sbtest;" '
-        mysql_cmd += '--socket=%s ' % self.mysql_socket
-        common.pdsh(settings.getnodes('clients'),  mysql_cmd).communicate()
+            # Create the sysbench tables
+            print 'Creating the Sysbench database...'
+            mysql_cmd = '/usr/bin/mysql -e "create database sbtest;" '
+            mysql_cmd += '-u root '
+            mysql_cmd += '--socket=%s ' % self.mysql_socket
+            common.pdsh(settings.getnodes('clients'),  mysql_cmd).communicate()
         
+        # Creation of the benchmark tables
+        print 'Creating the Sysbench tables...'
         pre_cmd = '%s ' % self.cmd_path_full
         pre_cmd += '--test=%s ' % self.prepare_path
-        pre_cmd += '--mysql-user=root ' #% self.mysql_user
-        #pre_cmd += '--mysql-password=%s ' % self.mysql_pass
+        if not self.no_create_db:
+            pre_cmd += '-u root '
+        else:
+            pre_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
         pre_cmd += '--mysql-socket=%s ' % self.mysql_socket
         pre_cmd += '--mysql-db=%s ' % self.mysql_database
         pre_cmd += '--mysql-table-engine=%s ' % self.mysql_engine
@@ -201,8 +216,10 @@ class MysqlSysBench(Benchmark):
         sysbench_cmd += '--max-time=%s ' % self.warmup_time
         sysbench_cmd += '--num-threads=%s ' % self.threads
         sysbench_cmd += '--test=%s ' % self.test_path
-        sysbench_cmd += '--mysql-user=root ' #% self.mysql_user
-        #sysbench_cmd += '--mysql-password=%s ' % self.mysql_pass
+        if not self.no_create_db:
+            sysbench_cmd += '-u root '
+        else:
+            sysbench_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
         sysbench_cmd += '--mysql-db=%s ' % self.mysql_database
         sysbench_cmd += '--mysql-socket=%s ' % self.mysql_socket
         sysbench_cmd += '--oltp-tables-count=%s ' % self.oltp_table_count
@@ -226,8 +243,10 @@ class MysqlSysBench(Benchmark):
         sysbench_cmd += '--max-time=%s ' % self.max_time
         sysbench_cmd += '--num-threads=%s ' % self.threads
         sysbench_cmd += '--test=%s ' % self.test_path
-        sysbench_cmd += '--mysql-user=root ' #% self.mysql_user
-        #sysbench_cmd += '--mysql-password=%s ' % self.mysql_pass
+        if not self.no_create_db:
+            sysbench_cmd += '-u root '
+        else:
+            sysbench_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
         sysbench_cmd += '--mysql-db=%s ' % self.mysql_database
         sysbench_cmd += '--mysql-socket=%s ' % self.mysql_socket
         sysbench_cmd += '--oltp-tables-count=%s ' % self.oltp_table_count
@@ -255,15 +274,16 @@ class MysqlSysBench(Benchmark):
     def cleanup(self):
         super(MysqlSysBench, self).cleanup()
         
-        common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench; sudo killall -9 mysqld').communicate()
+        common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench').communicate()
+        if not self.no_create_db:
+            common.pdsh(settings.getnodes('clients'), 'sudo killall -9 mysqld').communicate()
+            common.pdsh(settings.getnodes('clients'), 'sudo rm -rf %s' % self.mysql_datadir).communicate()
         
         if not self.no_rbd:
             common.pdsh(settings.getnodes('clients'), 'sudo umount /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
             common.pdsh(settings.getnodes('clients'), 'sudo rbd unmap /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s`' % self.poolname).communicate()
             common.pdsh(settings.getnodes('clients'), 'sudo rbd rm cbt-mysqlsysbench-`hostname -s` --pool %s' %  self.poolname).communicate()
             self.cluster.rmpool(self.poolname, self.pool_profile)
-        
-        common.pdsh(settings.getnodes('clients'), 'sudo rm -rf %s' % self.mysql_datadir).communicate()
         
     def set_client_param(self, param, value):
         if not self.no_rbd:
@@ -294,8 +314,12 @@ class MysqlSysBench(Benchmark):
             common.pdsh(settings.getnodes('clients'), 'sudo mount -t xfs -o rw,noatime,inode64 /dev/rbd/%s/cbt-mysqlsysbench-`hostname -s` %s' % (self.poolname, self.mysql_datadir)).communicate()
             monitoring.stop()
 
-        common.pdsh(settings.getnodes('clients'), 'sudo chown mysql.mysql %s' % self.mysql_datadir).communicate()
+        if not self.no_create_db:
+            common.pdsh(settings.getnodes('clients'), 'sudo chown mysql.mysql %s' % self.mysql_datadir).communicate()
         
 
     def recovery_callback(self): 
-        common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench; sudo killall -9 mysqld').communicate()
+        if not self.no_create_db:
+            common.pdsh(settings.getnodes('clients'), 'sudo killall -9 mysqld').communicate()
+
+        common.pdsh(settings.getnodes('clients'), 'sudo killall -9 sysbench').communicate()
