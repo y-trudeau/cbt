@@ -72,10 +72,12 @@ class MysqlSysBench(Benchmark):
             self.mysql_datadir = '%s/mnt/cbt-mysqlsysbench-`hostname -s`' % self.cluster.tmp_dir
         
         self.use_existing_database = str(config.get('use_existing_database', ''))
+        self.existing_database_is_preloaded = 0
         if len(self.use_existing_database) > 0:
             self.no_rbd = True 
             self.no_create_db = True
             self.mysql_database = self.use_existing_database
+            self.existing_database_is_preloaded = config.get('existing_database_is_preloaded', 0)
         else:
             self.no_rbd = False
             self.no_create_db = False
@@ -174,22 +176,23 @@ class MysqlSysBench(Benchmark):
             mysql_cmd += '--socket=%s ' % self.mysql_socket
             common.pdsh(settings.getnodes('clients'),  mysql_cmd).communicate()
         
-        # Creation of the benchmark tables
-        print 'Creating the Sysbench tables...'
-        pre_cmd = '%s ' % self.cmd_path_full
-        pre_cmd += '--test=%s ' % self.prepare_path
-        if not self.no_create_db:
-            pre_cmd += '--mysql-user=root '
-        else:
-            pre_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
-        pre_cmd += '--mysql-socket=%s ' % self.mysql_socket
-        pre_cmd += '--mysql-db=%s ' % self.mysql_database
-        pre_cmd += '--mysql-table-engine=%s ' % self.mysql_engine
-        pre_cmd += '--oltp-tables-count=%s ' % self.oltp_table_count
-        pre_cmd += '--oltp-table-size=%s ' % self.oltp_table_size
-        pre_cmd += '--num-threads=%s run ' % self.threads
-        pre_cmd += ' > %s/sysbench_prepare.out 2> %s/sysbench_prepare.err ' % (self.out_dir,self.out_dir)
-        common.pdsh(settings.getnodes('clients'), pre_cmd).communicate()
+        if self.existing_database_is_preloaded = 0:        
+            # Creation of the benchmark tables
+            print 'Creating the Sysbench tables...'
+            pre_cmd = '%s ' % self.cmd_path_full
+            pre_cmd += '--test=%s ' % self.prepare_path
+            if not self.no_create_db:
+                pre_cmd += '--mysql-user=root '
+            else:
+                pre_cmd += '--mysql-user=%s --mysql-password=%s ' % (self.mysql_user, self.mysql_pass)
+            pre_cmd += '--mysql-socket=%s ' % self.mysql_socket
+            pre_cmd += '--mysql-db=%s ' % self.mysql_database
+            pre_cmd += '--mysql-table-engine=%s ' % self.mysql_engine
+            pre_cmd += '--oltp-tables-count=%s ' % self.oltp_table_count
+            pre_cmd += '--oltp-table-size=%s ' % self.oltp_table_size
+            pre_cmd += '--num-threads=%s run ' % self.threads
+            pre_cmd += ' > %s/sysbench_prepare.out 2> %s/sysbench_prepare.err ' % (self.out_dir,self.out_dir)
+            common.pdsh(settings.getnodes('clients'), pre_cmd).communicate()
 
         return True
 

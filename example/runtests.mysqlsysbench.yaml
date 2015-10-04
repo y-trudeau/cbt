@@ -14,3 +14,11 @@ benchmarks:
     max-time: 300
     oltp-table-count: 2
     use_existing: True
+
+# mysqlbench reusing an existing sysbench databaset
+  mysqlsysbench:
+    warmup-time: 30
+    max-time: 300
+    oltp-table-count: 2
+    use_existing_database: sbtest
+    existing_database_is_preloaded: 1
